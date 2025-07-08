@@ -3,3 +3,4 @@ twilio
 gunicorn
 waitress
 requests
+feedparser
