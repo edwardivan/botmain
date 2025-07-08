@@ -34,11 +34,12 @@ def whatsapp_reply():
         else:
             msg.body("📋 Watchlist: " + ", ".join(sorted(watchlist)))
     else:
-        msg.body("Send commands like:
+ msg.body("""Send commands like:
 ADD TCS
-REMOVE TCS
-NEWS TCS
-LIST")
+REMOVE INFY
+NEWS RELIANCE
+LIST
+""")
 
     return str(resp)
 
