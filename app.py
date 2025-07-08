@@ -1,15 +1,31 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
+import feedparser
 
 app = Flask(__name__)
-
 user_watchlist = {}
+
+def fetch_google_news(company):
+    query = company.replace(" ", "+")
+    feed_url = f"https://news.google.com/rss/search?q={query}+site:moneycontrol.com&hl=en-IN&gl=IN&ceid=IN:en"
+    feed = feedparser.parse(feed_url)
+
+    if not feed.entries:
+        return f"No recent news found for {company}."
+
+    news_items = []
+    for entry in feed.entries[:3]:  # Get top 3
+        title = entry.title
+        link = entry.link
+        news_items.append(f"- {title}\n{link}")
+
+    return f"Latest news for *{company}*:\n\n" + "\n\n".join(news_items)
 
 @app.route("/whatsapp", methods=['POST'])
 def whatsapp():
     incoming_msg = request.values.get('Body', '').strip().upper()
     sender = request.values.get('From', '')
-    sender_id = sender.split(':')[-1]  # unique for each user
+    sender_id = sender.split(':')[-1]
 
     resp = MessagingResponse()
     msg = resp.message()
@@ -33,7 +49,8 @@ def whatsapp():
         msg.body(f"Your watchlist: {stocks}")
     elif incoming_msg.startswith("NEWS "):
         stock = incoming_msg.replace("NEWS ", "")
-        msg.body(f"Fetching latest news for {stock}... [placeholder]")
+        news = fetch_google_news(stock)
+        msg.body(news)
     else:
         msg.body("""Send commands like:
 ADD TCS
