@@ -1,40 +1,41 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import requests
 
 app = Flask(__name__)
 
-watchlist = set()
+user_watchlist = {}
 
-def get_bse_filings(symbol):
-    # Dummy response for demo purposes
-    return f"Latest BSE filings for {symbol}: [sample data]"
-
-@app.route("/whatsapp", methods=["POST"])
-def whatsapp_reply():
+@app.route("/whatsapp", methods=['POST'])
+def whatsapp():
     incoming_msg = request.values.get('Body', '').strip().upper()
+    sender = request.values.get('From', '')
+    sender_id = sender.split(':')[-1]  # unique for each user
+
     resp = MessagingResponse()
     msg = resp.message()
 
+    if sender_id not in user_watchlist:
+        user_watchlist[sender_id] = set()
+
     if incoming_msg.startswith("ADD "):
-        symbol = incoming_msg[4:].strip()
-        watchlist.add(symbol)
-        msg.body(f"✅ Added {symbol} to your watchlist.")
+        stock = incoming_msg.replace("ADD ", "")
+        user_watchlist[sender_id].add(stock)
+        msg.body(f"{stock} added to your watchlist.")
     elif incoming_msg.startswith("REMOVE "):
-        symbol = incoming_msg[7:].strip()
-        watchlist.discard(symbol)
-        msg.body(f"❌ Removed {symbol} from your watchlist.")
-    elif incoming_msg.startswith("NEWS ") or incoming_msg.startswith("FILINGS "):
-        symbol = incoming_msg.split()[1].strip()
-        response = get_bse_filings(symbol)
-        msg.body(response)
-    elif incoming_msg == "LIST":
-        if not watchlist:
-            msg.body("Your watchlist is empty.")
+        stock = incoming_msg.replace("REMOVE ", "")
+        if stock in user_watchlist[sender_id]:
+            user_watchlist[sender_id].remove(stock)
+            msg.body(f"{stock} removed from your watchlist.")
         else:
-            msg.body("📋 Watchlist: " + ", ".join(sorted(watchlist)))
+            msg.body(f"{stock} not found in your watchlist.")
+    elif incoming_msg == "LIST":
+        stocks = ", ".join(user_watchlist[sender_id]) or "No stocks in your watchlist."
+        msg.body(f"Your watchlist: {stocks}")
+    elif incoming_msg.startswith("NEWS "):
+        stock = incoming_msg.replace("NEWS ", "")
+        msg.body(f"Fetching latest news for {stock}... [placeholder]")
     else:
- msg.body("""Send commands like:
+        msg.body("""Send commands like:
 ADD TCS
 REMOVE INFY
 NEWS RELIANCE
@@ -44,5 +45,4 @@ LIST
     return str(resp)
 
 if __name__ == "__main__":
-    from waitress import serve
-    serve(app, host="0.0.0.0", port=8080)
+    app.run(debug=True)
