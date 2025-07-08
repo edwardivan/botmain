@@ -1,63 +1,62 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import feedparser
+import requests
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
-user_watchlist = {}
 
-def fetch_google_news(company):
-    query = company.replace(" ", "+")
-    feed_url = f"https://news.google.com/rss/search?q={query}+site:moneycontrol.com&hl=en-IN&gl=IN&ceid=IN:en"
-    feed = feedparser.parse(feed_url)
+def get_bse_filings(stock_name):
+    headers = {
+        'User-Agent': 'Mozilla/5.0'
+    }
 
-    if not feed.entries:
-        return f"No recent news found for {company}."
+    search_url = f"https://www.bseindia.com/corporates/ann.aspx"
+    response = requests.get(search_url, headers=headers)
+    if response.status_code != 200:
+        return ["Error: Unable to access BSE site."]
 
-    news_items = []
-    for entry in feed.entries[:3]:  # Get top 3
-        title = entry.title
-        link = entry.link
-        news_items.append(f"- {title}\n{link}")
+    # For simplicity, we use BSE scrip code manually mapped
+    scrip_map = {
+        "INFY": "500209",  # Infosys
+        "TCS": "532540",
+        "RELIANCE": "500325",
+        "SBIN": "500112",
+        # Add more as needed
+    }
 
-    return f"Latest news for *{company}*:\n\n" + "\n\n".join(news_items)
+    scrip_code = scrip_map.get(stock_name.upper())
+    if not scrip_code:
+        return [f"No BSE code found for {stock_name}. Try: INFY, TCS, RELIANCE, etc."]
+
+    filings_url = f"https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w?strCat=-1&strPrevDate=&strScrip={scrip_code}&strSearch=P&strToDate=&strType=C"
+
+    res = requests.get(filings_url, headers=headers)
+    if res.status_code != 200:
+        return ["Error fetching filings."]
+
+    data = res.json()
+    filings = data.get("Table", [])[:3]
+
+    if not filings:
+        return [f"No filings found for {stock_name}."]
+
+    links = [f"📄 {item['NEWSSUB']}\n➡ https://www.bseindia.com{item['ATTACHMENTNAME']}" for item in filings]
+    return links
 
 @app.route("/whatsapp", methods=['POST'])
 def whatsapp():
     incoming_msg = request.values.get('Body', '').strip().upper()
-    sender = request.values.get('From', '')
-    sender_id = sender.split(':')[-1]
-
     resp = MessagingResponse()
     msg = resp.message()
 
-    if sender_id not in user_watchlist:
-        user_watchlist[sender_id] = set()
-
-    if incoming_msg.startswith("ADD "):
-        stock = incoming_msg.replace("ADD ", "")
-        user_watchlist[sender_id].add(stock)
-        msg.body(f"{stock} added to your watchlist.")
-    elif incoming_msg.startswith("REMOVE "):
-        stock = incoming_msg.replace("REMOVE ", "")
-        if stock in user_watchlist[sender_id]:
-            user_watchlist[sender_id].remove(stock)
-            msg.body(f"{stock} removed from your watchlist.")
-        else:
-            msg.body(f"{stock} not found in your watchlist.")
-    elif incoming_msg == "LIST":
-        stocks = ", ".join(user_watchlist[sender_id]) or "No stocks in your watchlist."
-        msg.body(f"Your watchlist: {stocks}")
-    elif incoming_msg.startswith("NEWS "):
-        stock = incoming_msg.replace("NEWS ", "")
-        news = fetch_google_news(stock)
-        msg.body(news)
+    if incoming_msg.startswith("BSE "):
+        stock = incoming_msg.split("BSE ", 1)[-1].strip()
+        msg.body(f"🔍 Fetching latest BSE filings for *{stock}*...")
+        filings = get_bse_filings(stock)
+        for f in filings:
+            msg.body(f)
     else:
-        msg.body("""Send commands like:
-ADD TCS
-REMOVE INFY
-NEWS RELIANCE
-LIST
-""")
+        msg.body("Use format: BSE INFY")
 
     return str(resp)
 
